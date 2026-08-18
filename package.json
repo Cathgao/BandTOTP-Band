@@ -10,8 +10,5 @@
   },
   "devDependencies": {
     "aiot-toolkit": "^2.0.5"
-  },
-  "dependencies": {
-    "crypto-js": "^4.2.0"
   }
 }
