@@ -208,17 +208,30 @@ export default {
                     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
                     const d = parsed && Array.isArray(parsed.list) ? parsed.list : [];
                     const curDiv = Math.floor(Date.now() / 30000);
+                    // 智能排序合并：以安卓传入的最新顺序为基准，并安全保留手环端独有的账号
+                    const updatedIncomingList = [];
+                    const incomingKeySet = {};
+
                     d.forEach((e) => {
-                        const index = this.list.findIndex((a) => e.key === a.key);
-                        if (index !== -1) {
-                            this.list[index].name = e.name || this.list[index].name;
-                            this.list[index].usr = e.usr || '';
-                            this.list[index].isSteam = (this.list[index].name && this.list[index].name.toLowerCase() === "steam");
-                            this.list[index].prec = precomputeKey(this.list[index].key);
+                        if (!e || !e.key) return;
+                        incomingKeySet[e.key] = true;
+                        const existing = this.list.find((a) => a.key === e.key);
+                        if (existing) {
+                            existing.name = e.name || existing.name;
+                            existing.usr = e.usr || '';
+                            existing.isSteam = (existing.name && existing.name.toLowerCase() === "steam");
+                            existing.prec = precomputeKey(existing.key);
+                            updatedIncomingList.push(existing);
                         } else {
-                            this.list.push(new KeyItem(e.key, e.name, e.usr, curDiv));
+                            updatedIncomingList.push(new KeyItem(e.key, e.name, e.usr, curDiv));
                         }
                     });
+
+                    // 找出仅在手环本地存在但安卓本次未传入的独有账号
+                    const bandOnlyItems = this.list.filter((a) => a && a.key && !incomingKeySet[a.key]);
+
+                    // 将手环独有账号追加到末尾
+                    this.list = updatedIncomingList.concat(bandOnlyItems);
                     memoryCacheList = this.list;
                     this.save();
                     this.updateAllOtp(curDiv);
