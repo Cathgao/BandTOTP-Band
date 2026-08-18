@@ -2,63 +2,71 @@
   <div class="bg" onswipe="exit">
     <!-- biaodan -->
     <list class="bg" style="left: 3px;width: 186px;padding-top:86px;padding-bottom:86px;" id="list">
-      <list-item for="{{list}}"style="height: 110px;flex-wrap: wrap;background-color: #262626;margin-bottom:8px;border-radius: 27px;"type="aa" onclick="info({{$idx}})">
+      <list-item for="{{list}}" style="height: 110px;flex-wrap: wrap;background-color: #262626;margin-bottom:8px;border-radius: 27px;" type="aa" onclick="info($idx)">
         <text style="position: absolute;left:12px;top:12px;width:162px;height: 42px;text-align: left;lines: 1; text-overflow: ellipsis;">{{$item.name}}</text>
         <text style="position: absolute;left: 12px;top: 61px;width: 162px;font-size: 28px;color: #A8A8A8;text-align: left;">{{$item.otp}}</text>
       </list-item>
     </list>
-    <img src="/common/nokey.png"style="position: absolute;" if="{{list.length==0}}"/>
+    <!-- 空状态：仅在加载完成后且列表为空时显示 -->
+    <img src="/common/nokey.png" style="position: absolute;" if="{{isLoaded && list.length==0}}"/>
     <!-- 渐变遮罩 -->
     <img src="/common/tblack.png"/>
     <img src="/common/bblack.png" style="position: absolute;bottom:0px"/>
     <!-- 详情 -->
-    <div class="bg" style='justify-content: center;flex-wrap: wrap;flex-direction: column;align-content: center;'show="{{more_show}}">
+    <div class="bg" style='justify-content: center;flex-wrap: wrap;flex-direction: column;align-content: center;' show="{{more_show}}">
         <text>{{more.name}}</text>
-        <text if="{{more.usr}}"style="font-size: 20px;font-weight: normal;">{{more.usr}}</text>
+        <text if="{{more && more.usr}}" style="font-size: 20px;font-weight: normal;">{{more.usr}}</text>
         <text style="font-size: 40px;">{{more.otp}}</text>
         <text style="font-size: 20px;">剩余时间{{timelast}}S</text>
-        <img src="/common/del.png"onclick="del()" style="position: absolute;left: 45px; top: 6px;"/>
+        <img src="/common/del.png" onclick="del()" style="position: absolute;left: 45px; top: 6px;"/>
     </div>
-    <progress style="position: absolute;left: 2px;bottom: 6px;center-y:0px;center-x:94px;width: 188px;height: 94px;radius:94px;start-angle:240deg;total-angle:-120deg;stroke-width:10px;background-color: rgba(255, 255, 255, 0.6);;color:white" percent="{{timeProgress}}" type="arc" if="{{list.length!=0}}"></progress> 
+    <progress style="position: absolute;left: 2px;bottom: 6px;center-y:0px;center-x:94px;width: 188px;height: 94px;radius:94px;start-angle:240deg;total-angle:-120deg;stroke-width:10px;background-color: rgba(255, 255, 255, 0.6);color:white" percent="{{timeProgress}}" type="arc" if="{{isLoaded && list.length!=0}}"></progress> 
     <!-- 关于 -->
-    <img src="/common/info.png"onclick="i()" style="position: absolute;left: 45px; top: 6px;"show="{{!ab&&!more_show}}"/>
+    <img src="/common/info.png" onclick="i()" style="position: absolute;left: 45px; top: 6px;" show="{{!ab&&!more_show}}"/>
     <scroll class="bg" show="{{ab}}" scroll-y="true" bounces="true">
-			<img src="/common/about.png" />
+      <img src="/common/about.png" />
     </scroll>
     <!--返回-->
-    <img src="/common/back.png"onclick="exit('e')" style="position: absolute;left: 45px; top: 6px;"show="{{ab}}"/>
-	</div>
+    <img src="/common/back.png" onclick="exit('e')" style="position: absolute;left: 45px; top: 6px;" show="{{ab}}"/>
+  </div>
 </template>
 <script>
 import {
-    TOTP,SteamTotp,timeOffset
+    TOTP, SteamTotp, bufferizeSecret
 } from './totp';
 import prompt from '@system.prompt'
 import interconnect from '@system.interconnect'
 import storage from "@system.storage";
-let keyInterval, timeInterval, nowi, delTimeout, delCount
+
+let keyInterval, timeInterval, alignTimeout, nowi, delTimeout, delCount
 const conn = interconnect.instance(),
     dataKey = 'keys'
-//密钥类
-class key {
+
+// 密钥类：构造时预解析 WordArray 密钥并计算初始 OTP
+class KeyItem {
     constructor(key, name, usr = '') {
         this.name = name
         this.usr = usr
         this.key = key
+        this.isSteam = (name && name.toLowerCase() === "steam")
+        this.cachedSecret = bufferizeSecret(key)
+        this.otp = ''
         this.upd()
     }
-    upd() {
-        if(this.name.toLowerCase()==="steam")this.otp=SteamTotp(this.key)
-        else this.otp = TOTP(this.key)
-    }
-    toString() {
-        return `{"name":"${this.name}","usr":${this.usr},"key":${this.key}}`
+    upd(timeDiv30) {
+        if (this.isSteam) {
+            this.otp = SteamTotp(this.cachedSecret, timeDiv30)
+        } else {
+            this.otp = TOTP(this.cachedSecret, timeDiv30)
+        }
     }
 }
+
 export default {
     private: {
+        isLoaded: false,
         ab: false,
-        list: [/*  new key("website","website",'account')  */],
+        list: [],
         more_show: false,
         more: null,
         timelast: 0,
@@ -69,10 +77,21 @@ export default {
             key: dataKey,
             success: (data) => {
                 if (data) {
-                    //prompt.showToast({message:data,duration: 2000})
-                    data = JSON.parse(data)
-                    data.list.forEach((e) => this.list.push(new key(e.key, e.name, e.usr)))
+                    try {
+                        const parsed = JSON.parse(data)
+                        if (parsed && Array.isArray(parsed.list)) {
+                            this.list = parsed.list.map(e => new KeyItem(e.key, e.name, e.usr))
+                        }
+                    } catch (err) {}
                 }
+                this.isLoaded = true
+                this.updateAllOtp()
+            },
+            fail: () => {
+                this.isLoaded = true
+            },
+            complete: () => {
+                this.isLoaded = true
             }
         })
         conn.onmessage = (data) => {
@@ -80,11 +99,12 @@ export default {
                 let d = JSON.parse(data.data).list
                 d.forEach((e) => {
                     let index = this.list.findIndex((a) => e.key == a.key)
-                    if (index != -1) { //当密钥重复时刷新名字
+                    if (index != -1) {
                         this.list[index].name = e.name
                         this.list[index].usr = e.usr
+                        this.list[index].isSteam = (e.name && e.name.toLowerCase() === "steam")
                     } else {
-                        this.list.push(new key(e.key, e.name, e.usr))
+                        this.list.push(new KeyItem(e.key, e.name, e.usr))
                     }
                 })
                 this.save()
@@ -95,17 +115,72 @@ export default {
                 })
             }
         }
-
     },
-    i() { //关于
+    updateAllOtp(timeDiv30) {
+        if (!this.list || this.list.length === 0) return
+        for (let i = 0; i < this.list.length; i++) {
+            this.list[i].upd(timeDiv30)
+        }
+        if (this.more_show && this.more) {
+            this.more.upd(timeDiv30)
+        }
+    },
+    startTimers() {
+        this.stopTimers()
+        
+        const now = Date.now()
+        const curDiv30 = Math.floor(now / 30000)
+        this.updateAllOtp(curDiv30)
+
+        const ttl = Math.floor((now / 1000) % 30)
+        this.timelast = 30 - ttl
+        this.timeProgress = Math.floor((30000 - (now % 30000)) / 300)
+
+        // 100ms 刷新进度条（10FPS 极为平滑且大幅降低 CPU 与功耗）
+        timeInterval = setInterval(() => {
+            const curNow = Date.now()
+            this.timeProgress = Math.floor((30000 - (curNow % 30000)) / 300)
+        }, 100)
+
+        // 对齐到整秒更新倒计时与 30s 周期刷新
+        const ms2NextSecond = 1000 - (Date.now() % 1000)
+        alignTimeout = setTimeout(() => {
+            keyInterval = setInterval(() => {
+                const curNow = Date.now()
+                const curTtl = Math.floor((curNow / 1000) % 30)
+                if (curTtl === 0) {
+                    const nextDiv30 = Math.floor(curNow / 30000)
+                    this.updateAllOtp(nextDiv30)
+                }
+                this.timelast = 30 - curTtl
+            }, 1000)
+        }, ms2NextSecond)
+    },
+    stopTimers() {
+        if (timeInterval) {
+            clearInterval(timeInterval)
+            timeInterval = null
+        }
+        if (keyInterval) {
+            clearInterval(keyInterval)
+            keyInterval = null
+        }
+        if (alignTimeout) {
+            clearTimeout(alignTimeout)
+            alignTimeout = null
+        }
+    },
+    i() { // 关于
         this.ab = true
     },
-    info(i) { //更多
+    info(i) { // 更多
         nowi = i
         this.more = this.list[i]
         this.more_show = true
+        const ttl = Math.floor((Date.now() / 1000) % 30)
+        this.timelast = 30 - ttl
     },
-    exit(a) { //返回
+    exit(a) { // 返回
         if (a.direction == 'right' || a == "e") {
             if (this.ab || this.more_show) {
                 this.more_show = this.ab = false
@@ -116,32 +191,25 @@ export default {
         this.exit("e")
         return true
     },
-    save() { //保存
+    save() { // 保存
         let save = {
-            list: this.list
+            list: this.list.map(e => ({ name: e.name, usr: e.usr, key: e.key }))
         }
         storage.set({
             key: dataKey,
             value: JSON.stringify(save)
         })
     },
-    onShow() { //亮屏时刷新防止死亡
-        clearInterval(timeInterval)
-        clearInterval(keyInterval)
-        this.list.forEach((e) => e.upd())
-        var ms2NextSecond = 1000 - (Date.now() % 1000);
-        setTimeout(() => keyInterval = setInterval(() => {
-            var ttl = Math.floor(Date.now() / 1000 % 30);
-            if (ttl === 0) {
-                this.list.forEach((e) => e.upd())
-            }
-            this.timelast = 30 - ttl
-        }, 1000), ms2NextSecond);
-        timeInterval = setInterval(() => {
-            this.timeProgress = (30000 - Date.now() % 30000) / 300
-        }, 10);
+    onShow() { // 亮屏/切回前台时刷新
+        this.startTimers()
     },
-    del() { //删除
+    onHide() { // 灭屏/切入后台时停止定时器以节电
+        this.stopTimers()
+    },
+    onDestroy() { // 页面销毁时清理
+        this.stopTimers()
+    },
+    del() { // 删除
         clearTimeout(delTimeout)
         if (!delCount) {
             delCount = true
@@ -151,8 +219,8 @@ export default {
             })
             return
         }
-        this.list.splice(nowi, 1);
-        delCount =this.more_show = false
+        this.list.splice(nowi, 1)
+        delCount = this.more_show = false
         this.save()
         prompt.showToast({
             message: "删除成功"
