@@ -1,12 +1,6 @@
 // 极速无依赖零分配 SHA-1 / HMAC-SHA1 与 TOTP 实现
 // 专为嵌入式 JS 引擎（JerryScript / QuickJS / V8）深度优化
 
-var timeOffset = 0;
-
-function time() {
-  return Math.floor(Date.now() / 1000) + (timeOffset || 0);
-}
-
 // 查表法 Base32 ASCII 映射表（兼容 ES5，无 TypedArray.prototype.fill 依赖）
 var base32Lookup = new Array(128);
 for (var i = 0; i < 128; i++) {
@@ -47,7 +41,7 @@ function decodeBase32ToBytes(input) {
 function hexToBytes(hex) {
   var bytes = [];
   for (var i = 0; i < hex.length; i += 2) {
-    bytes.push(parseInt(hex.substr(i, 2), 16));
+    bytes.push(parseInt(hex.slice(i, i + 2), 16));
   }
   return bytes;
 }
@@ -184,7 +178,7 @@ function fastHmacSha1Truncated(prec, counter) {
 // 快速 TOTP 计算
 function fastTOTP(prec, timeVal) {
   try {
-    var counter = timeVal !== undefined ? timeVal : Math.floor(time() / 30);
+    var counter = timeVal !== undefined ? timeVal : Math.floor(Date.now() / 30000);
     var truncated = fastHmacSha1Truncated(prec, counter);
     var num = String(truncated % 1000000);
     while (num.length < 6) num = '0' + num;
@@ -197,7 +191,7 @@ function fastTOTP(prec, timeVal) {
 // 快速 Steam Guard 计算
 function fastSteamTotp(prec, timeVal) {
   try {
-    var counter = timeVal !== undefined ? timeVal : Math.floor(time() / 30);
+    var counter = timeVal !== undefined ? timeVal : Math.floor(Date.now() / 30000);
     var fullcode = fastHmacSha1Truncated(prec, counter);
     var chars = '23456789BCDFGHJKMNPQRTVWXY';
     var code = '';
@@ -234,7 +228,5 @@ module.exports = {
   fastTOTP: fastTOTP,
   fastSteamTotp: fastSteamTotp,
   precomputeKey: precomputeKey,
-  timeOffset: timeOffset,
-  base32Decode: decodeBase32ToBytes,
-  bufferizeSecret: precomputeKey
+  base32Decode: decodeBase32ToBytes
 };

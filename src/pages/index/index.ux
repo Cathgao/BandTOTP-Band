@@ -114,14 +114,14 @@ const dataKey = 'keys';
 
 // 密钥项：预计算 HMAC-SHA1 状态
 class KeyItem {
-    constructor(key, name, usr) {
+    constructor(key, name, usr, timeDiv30) {
         this.name = name || 'OTP';
         this.usr = usr || '';
         this.key = key || '';
         this.isSteam = (this.name && this.name.toLowerCase() === "steam");
         this.prec = precomputeKey(this.key);
         this.otp = '------';
-        this.upd();
+        this.upd(timeDiv30);
     }
     upd(timeDiv30) {
         if (this.isSteam) {
@@ -138,19 +138,24 @@ export default {
         ab: false,
         list: [],
         more_show: false,
-        more: null,
+        more: {},
         timelast: 30,
         lastDiv30: 0
     },
     onInit() {
-        // 1. 优先使用 RAM 内存缓存：若已有数据，0ms 瞬时进入就绪状态，彻底杜绝息屏唤醒时出现“正在载入”
+        const curDiv30 = Math.floor(Date.now() / 30000);
+        this.lastDiv30 = curDiv30;
+
+        // 1. 优先使用 RAM 内存缓存：若已有数据，0ms 瞬时进入就绪状态，跳过 Flash 存储读取
         if (memoryCacheList && memoryCacheList.length > 0) {
             this.list = memoryCacheList;
             this.isLoaded = true;
-            this.updateAllOtp();
+            this.updateAllOtp(curDiv30);
+            this.initConn();
+            return;
         }
 
-        // 2. 异步 Flash 数据读取与校验
+        // 2. 首次冷启动时，异步从 Flash 数据读取与校验
         storage.get({
             key: dataKey,
             success: (data) => {
@@ -158,13 +163,13 @@ export default {
                     try {
                         const parsed = typeof data === 'string' ? JSON.parse(data) : data;
                         if (parsed && Array.isArray(parsed.list)) {
-                            this.list = parsed.list.map(e => new KeyItem(e.key, e.name, e.usr));
+                            const cur = Math.floor(Date.now() / 30000);
+                            this.list = parsed.list.map(e => new KeyItem(e.key, e.name, e.usr, cur));
                             memoryCacheList = this.list;
                         }
                     } catch (err) {}
                 }
                 this.isLoaded = true;
-                this.updateAllOtp();
             },
             fail: () => {
                 this.isLoaded = true;
@@ -174,27 +179,30 @@ export default {
             }
         });
 
+        this.initConn();
+    },
+    initConn() {
         if (conn) {
             conn.onmessage = (data) => {
                 try {
                     const raw = data && data.data ? data.data : data;
                     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
                     const d = parsed && Array.isArray(parsed.list) ? parsed.list : [];
+                    const curDiv = Math.floor(Date.now() / 30000);
                     d.forEach((e) => {
                         const index = this.list.findIndex((a) => e.key === a.key);
                         if (index !== -1) {
                             this.list[index].name = e.name || this.list[index].name;
                             this.list[index].usr = e.usr || '';
                             this.list[index].isSteam = (this.list[index].name && this.list[index].name.toLowerCase() === "steam");
-                            this.list[index].prec = precomputeKey(this.list[index].key);
-                            this.list[index].upd();
+                            // 密钥未变更，无需重新计算 prec
                         } else {
-                            this.list.push(new KeyItem(e.key, e.name, e.usr));
+                            this.list.push(new KeyItem(e.key, e.name, e.usr, curDiv));
                         }
                     });
                     memoryCacheList = this.list;
                     this.save();
-                    this.updateAllOtp();
+                    this.updateAllOtp(curDiv);
                     prompt.showToast({
                         message: "同步成功",
                         duration: 1500
@@ -214,9 +222,6 @@ export default {
         for (let i = 0; i < this.list.length; i++) {
             this.list[i].upd(curDiv);
         }
-        if (this.more_show && this.more) {
-            this.more.upd(curDiv);
-        }
     },
     updateTimers() {
         const now = Date.now();
@@ -235,8 +240,11 @@ export default {
     },
     startTimers() {
         this.stopTimers();
-        this.lastDiv30 = Math.floor(Date.now() / 30000);
-        this.updateAllOtp(this.lastDiv30);
+        const nowDiv = Math.floor(Date.now() / 30000);
+        if (nowDiv !== this.lastDiv30) {
+            this.lastDiv30 = nowDiv;
+            this.updateAllOtp(nowDiv);
+        }
         this.updateTimers();
 
         // 500ms 刷新倒计时数字（省电且精准同步）
@@ -250,20 +258,30 @@ export default {
             timeInterval = null;
         }
     },
+    clearDelState() {
+        if (delTimeout) {
+            clearTimeout(delTimeout);
+            delTimeout = null;
+        }
+        delCount = false;
+    },
     i() { // 打开关于
+        this.clearDelState();
         this.ab = true;
     },
     info(idx) { // 打开详情
+        this.clearDelState();
         nowi = idx;
         this.more = this.list[idx];
         this.more_show = true;
-        const ttl = Math.floor((Date.now() / 1000) % 30);
-        this.timelast = 30 - ttl;
+        this.updateTimers();
     },
     exit(a) { // 返回
         if (a === 'e' || (a && a.direction === 'right')) {
+            this.clearDelState();
             if (this.ab || this.more_show) {
                 this.more_show = false;
+                this.more = {};
                 this.ab = false;
             } else {
                 this.$app.exit();
@@ -293,16 +311,19 @@ export default {
     },
     onHide() {
         this.stopTimers();
+        this.clearDelState();
     },
     onDestroy() {
         this.stopTimers();
+        this.clearDelState();
     },
     del() { // 删除确认
-        clearTimeout(delTimeout);
         if (!delCount) {
             delCount = true;
+            if (delTimeout) clearTimeout(delTimeout);
             delTimeout = setTimeout(() => {
                 delCount = false;
+                delTimeout = null;
             }, 1200);
             prompt.showToast({
                 message: "再次点击确认删除",
@@ -310,10 +331,11 @@ export default {
             });
             return;
         }
+        this.clearDelState();
         if (nowi >= 0 && nowi < this.list.length) {
             this.list.splice(nowi, 1);
-            delCount = false;
             this.more_show = false;
+            this.more = {};
             memoryCacheList = this.list;
             this.save();
             prompt.showToast({
