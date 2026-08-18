@@ -105,7 +105,11 @@ let delCount = false;
 let nowi = 0;
 let memoryCacheList = null; // 全局内存缓存：防止息屏/亮屏时闪烁“正在载入”
 
-const conn = interconnect.instance();
+let conn = null;
+try {
+    conn = interconnect.instance();
+} catch (e) {}
+
 const dataKey = 'keys';
 
 // 密钥项：预计算 HMAC-SHA1 状态
@@ -170,37 +174,39 @@ export default {
             }
         });
 
-        conn.onmessage = (data) => {
-            try {
-                const raw = data && data.data ? data.data : data;
-                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                const d = parsed && Array.isArray(parsed.list) ? parsed.list : [];
-                d.forEach((e) => {
-                    const index = this.list.findIndex((a) => e.key === a.key);
-                    if (index !== -1) {
-                        this.list[index].name = e.name || this.list[index].name;
-                        this.list[index].usr = e.usr || '';
-                        this.list[index].isSteam = (this.list[index].name && this.list[index].name.toLowerCase() === "steam");
-                        this.list[index].prec = precomputeKey(this.list[index].key);
-                        this.list[index].upd();
-                    } else {
-                        this.list.push(new KeyItem(e.key, e.name, e.usr));
-                    }
-                });
-                memoryCacheList = this.list;
-                this.save();
-                this.updateAllOtp();
-                prompt.showToast({
-                    message: "同步成功",
-                    duration: 1500
-                });
-            } catch (error) {
-                prompt.showToast({
-                    message: "同步异常: " + error.toString(),
-                    duration: 2000
-                });
-            }
-        };
+        if (conn) {
+            conn.onmessage = (data) => {
+                try {
+                    const raw = data && data.data ? data.data : data;
+                    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                    const d = parsed && Array.isArray(parsed.list) ? parsed.list : [];
+                    d.forEach((e) => {
+                        const index = this.list.findIndex((a) => e.key === a.key);
+                        if (index !== -1) {
+                            this.list[index].name = e.name || this.list[index].name;
+                            this.list[index].usr = e.usr || '';
+                            this.list[index].isSteam = (this.list[index].name && this.list[index].name.toLowerCase() === "steam");
+                            this.list[index].prec = precomputeKey(this.list[index].key);
+                            this.list[index].upd();
+                        } else {
+                            this.list.push(new KeyItem(e.key, e.name, e.usr));
+                        }
+                    });
+                    memoryCacheList = this.list;
+                    this.save();
+                    this.updateAllOtp();
+                    prompt.showToast({
+                        message: "同步成功",
+                        duration: 1500
+                    });
+                } catch (error) {
+                    prompt.showToast({
+                        message: "同步异常: " + error.toString(),
+                        duration: 2000
+                    });
+                }
+            };
+        }
     },
     updateAllOtp(timeDiv30) {
         if (!this.list || this.list.length === 0) return;
