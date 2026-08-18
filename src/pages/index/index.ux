@@ -1,63 +1,129 @@
 <template>
-  <div class="bg" onswipe="exit">
-    <!-- biaodan -->
-    <list class="bg" style="left: 3px;width: 186px;padding-top:86px;padding-bottom:86px;" id="list">
-      <list-item for="{{list}}" style="height: 110px;flex-wrap: wrap;background-color: #262626;margin-bottom:8px;border-radius: 27px;" type="aa" onclick="info($idx)">
-        <text style="position: absolute;left:12px;top:12px;width:162px;height: 42px;text-align: left;lines: 1; text-overflow: ellipsis;">{{$item.name}}</text>
-        <text style="position: absolute;left: 12px;top: 61px;width: 162px;font-size: 28px;color: #A8A8A8;text-align: left;">{{$item.otp}}</text>
+  <div class="root-container" onswipe="exit">
+    <!-- 启动即时加载状态（仅在首次冷启动且无内存缓存时展示） -->
+    <div class="loading-view" if="{{!isLoaded}}">
+      <div class="header-item">
+        <text class="header-title">BandTOTP</text>
+      </div>
+      <div class="loading-body">
+        <text class="loading-text">正在载入...</text>
+      </div>
+    </div>
+
+    <!-- 主列表 -->
+    <list class="main-list" id="list" show="{{isLoaded && list.length > 0 && !more_show && !ab}}">
+      <!-- 顶部信息栏 -->
+      <list-item type="header" class="header-item">
+        <text class="header-title">BandTOTP</text>
+        <img class="header-info-btn" src="/common/info.png" onclick="i()"/>
+      </list-item>
+
+      <!-- 验证码卡片（显式设定 94px 高度，保证虚拟列表正确渲染） -->
+      <list-item type="card" for="{{list}}" class="card-item" onclick="info($idx)">
+        <text class="card-name">{{$item.name}}</text>
+        <text class="card-usr">{{$item.usr}}</text>
+        <div class="card-bottom-row">
+          <text class="card-otp">{{$item.otp}}</text>
+          <text class="card-time">{{timelast}}s</text>
+        </div>
+      </list-item>
+
+      <!-- 底部统计 -->
+      <list-item type="footer" class="footer-item">
+        <text class="footer-text">{{list.length}} 个验证器</text>
       </list-item>
     </list>
-    <!-- 空状态：仅在加载完成后且列表为空时显示 -->
-    <img src="/common/nokey.png" style="position: absolute;" if="{{isLoaded && list.length==0}}"/>
-    <!-- 渐变遮罩 -->
-    <img src="/common/tblack.png"/>
-    <img src="/common/bblack.png" style="position: absolute;bottom:0px"/>
-    <!-- 详情 -->
-    <div class="bg" style='justify-content: center;flex-wrap: wrap;flex-direction: column;align-content: center;' show="{{more_show}}">
-        <text>{{more.name}}</text>
-        <text if="{{more && more.usr}}" style="font-size: 20px;font-weight: normal;">{{more.usr}}</text>
-        <text style="font-size: 40px;">{{more.otp}}</text>
-        <text style="font-size: 20px;">剩余时间{{timelast}}S</text>
-        <img src="/common/del.png" onclick="del()" style="position: absolute;left: 45px; top: 6px;"/>
+
+    <!-- 空状态（已载入但无验证码） -->
+    <div class="empty-view" if="{{isLoaded && list.length === 0 && !ab}}">
+      <div class="empty-header">
+        <img class="header-info-btn" src="/common/info.png" onclick="i()"/>
+      </div>
+      <div class="empty-body">
+        <img class="empty-icon" src="/common/nokey.png"/>
+      </div>
     </div>
-    <progress style="position: absolute;left: 2px;bottom: 6px;center-y:0px;center-x:94px;width: 188px;height: 94px;radius:94px;start-angle:240deg;total-angle:-120deg;stroke-width:10px;background-color: rgba(255, 255, 255, 0.6);color:white" percent="{{timeProgress}}" type="arc" if="{{isLoaded && list.length!=0}}"></progress> 
-    <!-- 关于 -->
-    <img src="/common/info.png" onclick="i()" style="position: absolute;left: 45px; top: 6px;" show="{{!ab&&!more_show}}"/>
-    <scroll class="bg" show="{{ab}}" scroll-y="true" bounces="true">
-      <img src="/common/about.png" />
-    </scroll>
-    <!--返回-->
-    <img src="/common/back.png" onclick="exit('e')" style="position: absolute;left: 45px; top: 6px;" show="{{ab}}"/>
+
+    <!-- 验证码详情页面 -->
+    <div class="overlay-view" show="{{more_show}}">
+      <div class="overlay-top-bar">
+        <img class="action-btn" src="/common/back.png" onclick="exit('e')"/>
+        <img class="action-btn" src="/common/del.png" onclick="del()"/>
+      </div>
+      <div class="detail-body">
+        <text class="detail-name">{{more.name}}</text>
+        <text class="detail-usr">{{more.usr}}</text>
+        <text class="detail-otp">{{more.otp}}</text>
+        <text class="detail-time">有效时间剩余 {{timelast}} 秒</text>
+      </div>
+    </div>
+
+    <!-- 关于页面 -->
+    <div class="overlay-view" show="{{ab}}">
+      <div class="overlay-top-bar">
+        <img class="action-btn" src="/common/back.png" onclick="exit('e')"/>
+        <text class="bar-title">关于</text>
+        <div style="width: 44px; height: 30px;"></div>
+      </div>
+      <list class="about-list">
+        <list-item type="ab-logo" class="about-item-logo">
+          <img class="about-logo" src="/common/logo.png"/>
+        </list-item>
+        <list-item type="ab-title" class="about-item-title">
+          <text class="about-app-name">BandTOTP</text>
+          <text class="about-version">Version 1.1</text>
+        </list-item>
+        <list-item type="ab-tag" class="about-item-tag">
+          <text class="about-tag-text">离线安全双重认证</text>
+        </list-item>
+        <list-item type="ab-dev" class="about-item-dev">
+          <text class="about-dev-title">Developers</text>
+          <text class="about-dev-name">无源流沙</text>
+          <text class="about-dev-name">乐色桶</text>
+        </list-item>
+        <list-item type="ab-foot" class="about-item-foot">
+          <text class="about-foot-text">Powered by Xiaomi Vela</text>
+        </list-item>
+      </list>
+    </div>
   </div>
 </template>
+
 <script>
-import {
-    TOTP, SteamTotp, bufferizeSecret
-} from './totp';
-import prompt from '@system.prompt'
-import interconnect from '@system.interconnect'
+var totp = require('./totp');
+var precomputeKey = totp.precomputeKey;
+var fastTOTP = totp.fastTOTP;
+var fastSteamTotp = totp.fastSteamTotp;
+
+import prompt from '@system.prompt';
+import interconnect from '@system.interconnect';
 import storage from "@system.storage";
 
-let keyInterval, timeInterval, alignTimeout, nowi, delTimeout, delCount
-const conn = interconnect.instance(),
-    dataKey = 'keys'
+let timeInterval = null;
+let delTimeout = null;
+let delCount = false;
+let nowi = 0;
+let memoryCacheList = null; // 全局内存缓存：防止息屏/亮屏时闪烁“正在载入”
 
-// 密钥类：构造时预解析 WordArray 密钥并计算初始 OTP
+const conn = interconnect.instance();
+const dataKey = 'keys';
+
+// 密钥项：预计算 HMAC-SHA1 状态
 class KeyItem {
-    constructor(key, name, usr = '') {
-        this.name = name
-        this.usr = usr
-        this.key = key
-        this.isSteam = (name && name.toLowerCase() === "steam")
-        this.cachedSecret = bufferizeSecret(key)
-        this.otp = ''
-        this.upd()
+    constructor(key, name, usr) {
+        this.name = name || 'OTP';
+        this.usr = usr || '';
+        this.key = key || '';
+        this.isSteam = (this.name && this.name.toLowerCase() === "steam");
+        this.prec = precomputeKey(this.key);
+        this.otp = '------';
+        this.upd();
     }
     upd(timeDiv30) {
         if (this.isSteam) {
-            this.otp = SteamTotp(this.cachedSecret, timeDiv30)
+            this.otp = fastSteamTotp(this.prec, timeDiv30);
         } else {
-            this.otp = TOTP(this.cachedSecret, timeDiv30)
+            this.otp = fastTOTP(this.prec, timeDiv30);
         }
     }
 }
@@ -69,183 +135,512 @@ export default {
         list: [],
         more_show: false,
         more: null,
-        timelast: 0,
-        timeProgress: 0,
+        timelast: 30,
+        lastDiv30: 0
     },
     onInit() {
+        // 1. 优先使用 RAM 内存缓存：若已有数据，0ms 瞬时进入就绪状态，彻底杜绝息屏唤醒时出现“正在载入”
+        if (memoryCacheList && memoryCacheList.length > 0) {
+            this.list = memoryCacheList;
+            this.isLoaded = true;
+            this.updateAllOtp();
+        }
+
+        // 2. 异步 Flash 数据读取与校验
         storage.get({
             key: dataKey,
             success: (data) => {
                 if (data) {
                     try {
-                        const parsed = JSON.parse(data)
+                        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
                         if (parsed && Array.isArray(parsed.list)) {
-                            this.list = parsed.list.map(e => new KeyItem(e.key, e.name, e.usr))
+                            this.list = parsed.list.map(e => new KeyItem(e.key, e.name, e.usr));
+                            memoryCacheList = this.list;
                         }
                     } catch (err) {}
                 }
-                this.isLoaded = true
-                this.updateAllOtp()
+                this.isLoaded = true;
+                this.updateAllOtp();
             },
             fail: () => {
-                this.isLoaded = true
+                this.isLoaded = true;
             },
             complete: () => {
-                this.isLoaded = true
+                this.isLoaded = true;
             }
-        })
+        });
+
         conn.onmessage = (data) => {
             try {
-                let d = JSON.parse(data.data).list
+                const raw = data && data.data ? data.data : data;
+                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                const d = parsed && Array.isArray(parsed.list) ? parsed.list : [];
                 d.forEach((e) => {
-                    let index = this.list.findIndex((a) => e.key == a.key)
-                    if (index != -1) {
-                        this.list[index].name = e.name
-                        this.list[index].usr = e.usr
-                        this.list[index].isSteam = (e.name && e.name.toLowerCase() === "steam")
+                    const index = this.list.findIndex((a) => e.key === a.key);
+                    if (index !== -1) {
+                        this.list[index].name = e.name || this.list[index].name;
+                        this.list[index].usr = e.usr || '';
+                        this.list[index].isSteam = (this.list[index].name && this.list[index].name.toLowerCase() === "steam");
+                        this.list[index].prec = precomputeKey(this.list[index].key);
+                        this.list[index].upd();
                     } else {
-                        this.list.push(new KeyItem(e.key, e.name, e.usr))
+                        this.list.push(new KeyItem(e.key, e.name, e.usr));
                     }
-                })
-                this.save()
+                });
+                memoryCacheList = this.list;
+                this.save();
+                this.updateAllOtp();
+                prompt.showToast({
+                    message: "同步成功",
+                    duration: 1500
+                });
             } catch (error) {
                 prompt.showToast({
-                    message: error.toString(),
+                    message: "同步异常: " + error.toString(),
                     duration: 2000
-                })
+                });
             }
-        }
+        };
     },
     updateAllOtp(timeDiv30) {
-        if (!this.list || this.list.length === 0) return
+        if (!this.list || this.list.length === 0) return;
+        const curDiv = timeDiv30 !== undefined ? timeDiv30 : Math.floor(Date.now() / 30000);
         for (let i = 0; i < this.list.length; i++) {
-            this.list[i].upd(timeDiv30)
+            this.list[i].upd(curDiv);
         }
         if (this.more_show && this.more) {
-            this.more.upd(timeDiv30)
+            this.more.upd(curDiv);
+        }
+    },
+    updateTimers() {
+        const now = Date.now();
+        const msElapsed = now % 30000;
+        const msRemaining = 30000 - msElapsed;
+
+        // 严格同步计算：剩余秒数 (30 ~ 1)，1秒整完整持续到周期翻转瞬间
+        this.timelast = Math.max(1, Math.ceil(msRemaining / 1000));
+
+        // 周期翻转刷新 OTP
+        const curDiv30 = Math.floor(now / 30000);
+        if (curDiv30 !== this.lastDiv30) {
+            this.lastDiv30 = curDiv30;
+            this.updateAllOtp(curDiv30);
         }
     },
     startTimers() {
-        this.stopTimers()
-        
-        const now = Date.now()
-        const curDiv30 = Math.floor(now / 30000)
-        this.updateAllOtp(curDiv30)
+        this.stopTimers();
+        this.lastDiv30 = Math.floor(Date.now() / 30000);
+        this.updateAllOtp(this.lastDiv30);
+        this.updateTimers();
 
-        const ttl = Math.floor((now / 1000) % 30)
-        this.timelast = 30 - ttl
-        this.timeProgress = Math.floor((30000 - (now % 30000)) / 300)
-
-        // 100ms 刷新进度条（10FPS 极为平滑且大幅降低 CPU 与功耗）
+        // 500ms 刷新倒计时数字（省电且精准同步）
         timeInterval = setInterval(() => {
-            const curNow = Date.now()
-            this.timeProgress = Math.floor((30000 - (curNow % 30000)) / 300)
-        }, 100)
-
-        // 对齐到整秒更新倒计时与 30s 周期刷新
-        const ms2NextSecond = 1000 - (Date.now() % 1000)
-        alignTimeout = setTimeout(() => {
-            keyInterval = setInterval(() => {
-                const curNow = Date.now()
-                const curTtl = Math.floor((curNow / 1000) % 30)
-                if (curTtl === 0) {
-                    const nextDiv30 = Math.floor(curNow / 30000)
-                    this.updateAllOtp(nextDiv30)
-                }
-                this.timelast = 30 - curTtl
-            }, 1000)
-        }, ms2NextSecond)
+            this.updateTimers();
+        }, 500);
     },
     stopTimers() {
         if (timeInterval) {
-            clearInterval(timeInterval)
-            timeInterval = null
-        }
-        if (keyInterval) {
-            clearInterval(keyInterval)
-            keyInterval = null
-        }
-        if (alignTimeout) {
-            clearTimeout(alignTimeout)
-            alignTimeout = null
+            clearInterval(timeInterval);
+            timeInterval = null;
         }
     },
-    i() { // 关于
-        this.ab = true
+    i() { // 打开关于
+        this.ab = true;
     },
-    info(i) { // 更多
-        nowi = i
-        this.more = this.list[i]
-        this.more_show = true
-        const ttl = Math.floor((Date.now() / 1000) % 30)
-        this.timelast = 30 - ttl
+    info(idx) { // 打开详情
+        nowi = idx;
+        this.more = this.list[idx];
+        this.more_show = true;
+        const ttl = Math.floor((Date.now() / 1000) % 30);
+        this.timelast = 30 - ttl;
     },
     exit(a) { // 返回
-        if (a.direction == 'right' || a == "e") {
+        if (a === 'e' || (a && a.direction === 'right')) {
             if (this.ab || this.more_show) {
-                this.more_show = this.ab = false
-            } else this.$app.exit()
+                this.more_show = false;
+                this.ab = false;
+            } else {
+                this.$app.exit();
+            }
         }
     },
     onBackPress() {
-        this.exit("e")
-        return true
+        this.exit('e');
+        return true;
     },
-    save() { // 保存
-        let save = {
+    save() { // 持久化
+        const saveObj = {
             list: this.list.map(e => ({ name: e.name, usr: e.usr, key: e.key }))
-        }
+        };
         storage.set({
             key: dataKey,
-            value: JSON.stringify(save)
-        })
+            value: JSON.stringify(saveObj)
+        });
     },
-    onShow() { // 亮屏/切回前台时刷新
-        this.startTimers()
-    },
-    onHide() { // 灭屏/切入后台时停止定时器以节电
-        this.stopTimers()
-    },
-    onDestroy() { // 页面销毁时清理
-        this.stopTimers()
-    },
-    del() { // 删除
-        clearTimeout(delTimeout)
-        if (!delCount) {
-            delCount = true
-            delTimeout = setTimeout(() => delCount = false, 500)
-            prompt.showToast({
-                message: "双击确认删除"
-            })
-            return
+    onShow() {
+        // 亮屏唤醒：若已有缓存直接保持就绪状态并启动定时器
+        if (memoryCacheList && memoryCacheList.length > 0) {
+            this.list = memoryCacheList;
+            this.isLoaded = true;
         }
-        this.list.splice(nowi, 1)
-        delCount = this.more_show = false
-        this.save()
-        prompt.showToast({
-            message: "删除成功"
-        })
+        this.startTimers();
+    },
+    onHide() {
+        this.stopTimers();
+    },
+    onDestroy() {
+        this.stopTimers();
+    },
+    del() { // 删除确认
+        clearTimeout(delTimeout);
+        if (!delCount) {
+            delCount = true;
+            delTimeout = setTimeout(() => {
+                delCount = false;
+            }, 1200);
+            prompt.showToast({
+                message: "再次点击确认删除",
+                duration: 1200
+            });
+            return;
+        }
+        if (nowi >= 0 && nowi < this.list.length) {
+            this.list.splice(nowi, 1);
+            delCount = false;
+            this.more_show = false;
+            memoryCacheList = this.list;
+            this.save();
+            prompt.showToast({
+                message: "已删除",
+                duration: 1000
+            });
+        }
     }
-}
+};
 </script>
+
 <style>
-.bg{
-  position: absolute;
-  width: 192px;
-  height: 490px;
-  background-color: black;
+.root-container {
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+  flex-direction: column;
 }
-text{
-  font-size: 30px;
+
+.loading-view {
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.loading-body {
+  width: 100%;
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+}
+
+.loading-text {
+  font-size: 14px;
+  color: #636366;
+}
+
+.main-list {
+  width: 100%;
+  height: 100%;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.header-item {
+  width: 100%;
+  height: 48px;
+  justify-content: space-between;
+  align-items: center;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.header-title {
+  font-size: 18px;
   font-weight: bold;
   color: #FFFFFF;
-  text-align:center
 }
-.btn{
-  width: 60px;
+
+.header-info-btn {
+  width: 38px;
+  height: 26px;
+  object-fit: contain;
+}
+
+.card-item {
+  width: 100%;
+  height: 94px;
+  background-color: #1c1c1e;
+  border-radius: 16px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.card-name {
+  width: 100%;
+  height: 22px;
+  font-size: 17px;
+  font-weight: bold;
+  color: #FFFFFF;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+.card-usr {
+  width: 100%;
+  height: 18px;
+  font-size: 13px;
+  color: #8E8E93;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+.card-bottom-row {
+  width: 100%;
+  height: 34px;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.card-otp {
+  font-size: 28px;
+  font-weight: bold;
+  color: #00E5FF;
+}
+
+.card-time {
+  font-size: 13px;
+  color: #8E8E93;
+  margin-bottom: 2px;
+}
+
+.footer-item {
+  width: 100%;
+  height: 36px;
+  justify-content: center;
+  align-items: center;
+}
+
+.footer-text {
+  font-size: 12px;
+  color: #48484A;
+}
+
+.empty-view {
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.empty-header {
+  width: 100%;
+  height: 48px;
+  justify-content: flex-end;
+  align-items: center;
+  padding-right: 12px;
+}
+
+.empty-body {
+  width: 100%;
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+}
+
+.empty-icon {
+  width: 160px;
+  height: 220px;
+  object-fit: contain;
+}
+
+.overlay-view {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #000000;
+  flex-direction: column;
+}
+
+.overlay-top-bar {
+  width: 100%;
+  height: 48px;
+  justify-content: space-between;
+  align-items: center;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.bar-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #FFFFFF;
+}
+
+.action-btn {
+  width: 44px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.detail-body {
+  width: 100%;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.detail-name {
+  width: 100%;
+  font-size: 22px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: center;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+.detail-usr {
+  width: 100%;
+  font-size: 14px;
+  color: #8E8E93;
+  margin-top: 4px;
+  text-align: center;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+.detail-otp {
+  width: 100%;
+  font-size: 38px;
+  font-weight: bold;
+  color: #00E5FF;
+  margin-top: 12px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.detail-time {
+  width: 100%;
+  font-size: 13px;
+  color: #8E8E93;
+  text-align: center;
+}
+
+.about-list {
+  width: 100%;
+  height: 100%;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.about-item-logo {
+  width: 100%;
   height: 60px;
-  border-radius: 99px;
-  background-color: #262626;
-  border: 3px solid rgba(255, 255, 255, 0.06);
+  justify-content: center;
+  align-items: center;
+}
+
+.about-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.about-item-title {
+  width: 100%;
+  height: 50px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.about-app-name {
+  width: 100%;
+  height: 26px;
+  font-size: 18px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: center;
+}
+
+.about-version {
+  width: 100%;
+  height: 18px;
+  font-size: 12px;
+  color: #8E8E93;
+  text-align: center;
+}
+
+.about-item-tag {
+  width: 100%;
+  height: 36px;
+  justify-content: center;
+  align-items: center;
+}
+
+.about-tag-text {
+  height: 24px;
+  line-height: 24px;
+  font-size: 12px;
+  color: #30D158;
+  background-color: #1c1c1e;
+  border-radius: 8px;
+  padding-left: 8px;
+  padding-right: 8px;
+  text-align: center;
+}
+
+.about-item-dev {
+  width: 100%;
+  height: 80px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.about-dev-title {
+  width: 100%;
+  height: 20px;
+  font-size: 13px;
+  color: #636366;
+  text-align: center;
+}
+
+.about-dev-name {
+  width: 100%;
+  height: 24px;
+  font-size: 15px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: center;
+}
+
+.about-item-foot {
+  width: 100%;
+  height: 36px;
+  justify-content: center;
+  align-items: center;
+}
+
+.about-foot-text {
+  font-size: 11px;
+  color: #48484A;
 }
 </style>
