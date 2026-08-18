@@ -1,5 +1,5 @@
 <template>
-  <div class="root-container" onswipe="exit">
+  <div class="root-container">
     <!-- 启动即时加载状态（仅在首次冷启动且无内存缓存时展示） -->
     <div class="loading-view" if="{{!isLoaded}}">
       <div class="header-item">
@@ -10,22 +10,19 @@
       </div>
     </div>
 
-    <!-- 主列表 -->
-    <list class="main-list" id="list" show="{{isLoaded && list.length > 0 && !more_show && !ab}}">
+    <list class="main-list" id="list" bounces="true" show="{{isLoaded && list.length > 0 && !more_show && !ab}}">
       <!-- 顶部信息栏 -->
       <list-item type="header" class="header-item">
         <text class="header-title">BandTOTP</text>
-        <img class="header-info-btn" src="/common/info.png" onclick="i()"/>
+        <div class="header-btn-info" onclick="i()">
+          <img class="header-btn-icon-info" src="/common/info_icon.png"/>
+        </div>
       </list-item>
 
-      <!-- 验证码卡片（显式设定 94px 高度，保证虚拟列表正确渲染） -->
       <list-item type="card" for="{{list}}" class="card-item" onclick="info($idx)">
         <text class="card-name">{{$item.name}}</text>
         <text class="card-usr">{{$item.usr}}</text>
-        <div class="card-bottom-row">
-          <text class="card-otp">{{$item.otp}}</text>
-          <text class="card-time">{{timelast}}s</text>
-        </div>
+        <text class="card-otp">{{$item.otp}}</text>
       </list-item>
 
       <!-- 底部统计 -->
@@ -34,10 +31,17 @@
       </list-item>
     </list>
 
+    <!-- 底部独立悬浮倒计时进度条（双端半圆胶囊 + 动态状态色） -->
+    <div class="bottom-progress-container" if="{{isLoaded && list.length > 0 && !more_show && !ab}}">
+      <progress class="bottom-progress {{progressClass}}" percent="{{timeProgress}}" type="horizontal"></progress>
+    </div>
+
     <!-- 空状态（已载入但无验证码） -->
     <div class="empty-view" if="{{isLoaded && list.length === 0 && !ab}}">
       <div class="empty-header">
-        <img class="header-info-btn" src="/common/info.png" onclick="i()"/>
+        <div class="header-btn-info" onclick="i()">
+          <img class="header-btn-icon-info" src="/common/info_icon.png"/>
+        </div>
       </div>
       <div class="empty-body">
         <img class="empty-icon" src="/common/nokey.png"/>
@@ -45,10 +49,14 @@
     </div>
 
     <!-- 验证码详情页面 -->
-    <div class="overlay-view" show="{{more_show}}">
+    <div class="overlay-view" if="{{more_show}}" onswipe="exit">
       <div class="overlay-top-bar">
-        <img class="action-btn" src="/common/back.png" onclick="exit('e')"/>
-        <img class="action-btn" src="/common/del.png" onclick="del()"/>
+        <div class="btn-back" onclick="exit('e')">
+          <img class="btn-icon-back" src="/common/back_icon.png"/>
+        </div>
+        <div class="btn-del" onclick="del()">
+          <img class="btn-icon-del" src="/common/del_icon.png"/>
+        </div>
       </div>
       <div class="detail-body">
         <text class="detail-name">{{more.name}}</text>
@@ -59,11 +67,13 @@
     </div>
 
     <!-- 关于页面 -->
-    <div class="overlay-view" show="{{ab}}">
+    <div class="overlay-view" if="{{ab}}" onswipe="exit">
       <div class="overlay-top-bar">
-        <img class="action-btn" src="/common/back.png" onclick="exit('e')"/>
+        <div class="btn-back" onclick="exit('e')">
+          <img class="btn-icon-back" src="/common/back_icon.png"/>
+        </div>
         <text class="bar-title">关于</text>
-        <div style="width: 44px; height: 30px;"></div>
+        <div style="width: 38px; height: 26px;"></div>
       </div>
       <list class="about-list">
         <list-item type="ab-logo" class="about-item-logo">
@@ -71,7 +81,7 @@
         </list-item>
         <list-item type="ab-title" class="about-item-title">
           <text class="about-app-name">BandTOTP</text>
-          <text class="about-version">Version 1.1</text>
+          <text class="about-version">Version 2.0</text>
         </list-item>
         <list-item type="ab-tag" class="about-item-tag">
           <text class="about-tag-text">离线安全双重认证</text>
@@ -100,11 +110,13 @@ import prompt from '@system.prompt';
 import interconnect from '@system.interconnect';
 import storage from "@system.storage";
 
+let alignTimeout = null;
+let progressInterval = null;
 let timeInterval = null;
 let delTimeout = null;
 let delCount = false;
 let nowi = 0;
-let memoryCacheList = null; // 全局内存缓存：防止息屏/亮屏时闪烁“正在载入”
+let memoryCacheList = null;
 
 let conn = null;
 try {
@@ -141,13 +153,14 @@ export default {
         more_show: false,
         more: {},
         timelast: 30,
+        timeProgress: 100,
+        progressClass: 'progress-cyan',
         lastDiv30: 0
     },
     onInit() {
         const curDiv30 = Math.floor(Date.now() / 30000);
         this.lastDiv30 = curDiv30;
 
-        // 1. 优先使用 RAM 内存缓存：若已有数据，0ms 瞬时进入就绪状态，跳过 Flash 存储读取
         if (memoryCacheList && memoryCacheList.length > 0) {
             this.list = memoryCacheList;
             this.isLoaded = true;
@@ -156,14 +169,13 @@ export default {
             return;
         }
 
-        // 2. 首次冷启动时，异步从 Flash 数据读取与校验
         storage.get({
             key: dataKey,
             success: (data) => {
                 if (data) {
                     try {
                         const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-                        if (parsed && Array.isArray(parsed.list)) {
+                        if (parsed && Array.isArray(parsed.list) && parsed.list.length > 0) {
                             const cur = Math.floor(Date.now() / 30000);
                             this.list = parsed.list.map(e => new KeyItem(e.key, e.name, e.usr, cur));
                             memoryCacheList = this.list;
@@ -171,6 +183,7 @@ export default {
                     } catch (err) {}
                 }
                 this.isLoaded = true;
+                this.updateAllOtp(curDiv30);
             },
             fail: () => {
                 this.isLoaded = true;
@@ -223,37 +236,61 @@ export default {
         for (let i = 0; i < this.list.length; i++) {
             this.list[i].upd(curDiv);
         }
+        if (this.more_show && this.more && this.more.upd) {
+            this.more.upd(curDiv);
+        }
     },
-    updateTimers() {
+    updateProgress() {
         const now = Date.now();
-        const msElapsed = now % 30000;
-        const msRemaining = 30000 - msElapsed;
-
-        // 严格同步计算：剩余秒数 (30 ~ 1)，1秒整完整持续到周期翻转瞬间
-        this.timelast = Math.max(1, Math.ceil(msRemaining / 1000));
-
-        // 周期翻转刷新 OTP
         const curDiv30 = Math.floor(now / 30000);
         if (curDiv30 !== this.lastDiv30) {
             this.lastDiv30 = curDiv30;
             this.updateAllOtp(curDiv30);
         }
+        const msRemaining = 30000 - (now % 30000);
+        const secRemaining = Math.max(1, Math.ceil(msRemaining / 1000));
+
+        const newProgress = Math.floor((secRemaining / 30) * 100);
+        if (this.timeProgress !== newProgress) {
+            this.timeProgress = newProgress;
+        }
+
+        if (this.more_show && this.timelast !== secRemaining) {
+            this.timelast = secRemaining;
+        }
+
+        let newColorClass = 'progress-cyan';
+        if (secRemaining <= 5) {
+            newColorClass = 'progress-red';
+        } else if (secRemaining <= 10) {
+            newColorClass = 'progress-orange';
+        }
+        if (this.progressClass !== newColorClass) {
+            this.progressClass = newColorClass;
+        }
     },
     startTimers() {
         this.stopTimers();
-        const nowDiv = Math.floor(Date.now() / 30000);
-        if (nowDiv !== this.lastDiv30) {
-            this.lastDiv30 = nowDiv;
-            this.updateAllOtp(nowDiv);
-        }
-        this.updateTimers();
+        const now = Date.now();
+        this.updateProgress();
 
-        // 500ms 刷新倒计时数字（省电且精准同步）
-        timeInterval = setInterval(() => {
-            this.updateTimers();
-        }, 500);
+        const ms2NextSec = 1000 - (now % 1000);
+        alignTimeout = setTimeout(() => {
+            this.updateProgress();
+            progressInterval = setInterval(() => {
+                this.updateProgress();
+            }, 1000);
+        }, ms2NextSec);
     },
     stopTimers() {
+        if (alignTimeout) {
+            clearTimeout(alignTimeout);
+            alignTimeout = null;
+        }
+        if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+        }
         if (timeInterval) {
             clearInterval(timeInterval);
             timeInterval = null;
@@ -275,7 +312,7 @@ export default {
         nowi = idx;
         this.more = this.list[idx];
         this.more_show = true;
-        this.updateTimers();
+        this.updateProgress();
     },
     exit(a) { // 返回
         if (a === 'e' || (a && a.direction === 'right')) {
@@ -303,8 +340,8 @@ export default {
         });
     },
     onShow() {
-        // 亮屏唤醒：若已有缓存直接保持就绪状态并启动定时器
-        if (memoryCacheList && memoryCacheList.length > 0) {
+        // 亮屏唤醒：若当前实例无数据但已有全局缓存才赋值，避免重复覆盖绑定引发内存泄漏
+        if ((!this.list || this.list.length === 0) && memoryCacheList && memoryCacheList.length > 0) {
             this.list = memoryCacheList;
             this.isLoaded = true;
         }
@@ -360,8 +397,8 @@ export default {
   width: 100%;
   height: 100%;
   flex-direction: column;
-  padding-left: 8px;
-  padding-right: 8px;
+  padding-left: 10px;
+  padding-right: 10px;
 }
 
 .loading-body {
@@ -398,9 +435,18 @@ export default {
   color: #FFFFFF;
 }
 
-.header-info-btn {
+.header-btn-info {
   width: 38px;
   height: 26px;
+  background-color: #2C2C2E;
+  border-radius: 13px;
+  justify-content: center;
+  align-items: center;
+}
+
+.header-btn-icon-info {
+  width: 16px;
+  height: 6px;
   object-fit: contain;
 }
 
@@ -418,6 +464,7 @@ export default {
 .card-name {
   width: 100%;
   height: 22px;
+  line-height: 22px;
   font-size: 17px;
   font-weight: bold;
   color: #FFFFFF;
@@ -428,29 +475,20 @@ export default {
 .card-usr {
   width: 100%;
   height: 18px;
+  line-height: 18px;
   font-size: 13px;
   color: #8E8E93;
   lines: 1;
   text-overflow: ellipsis;
 }
 
-.card-bottom-row {
+.card-otp {
   width: 100%;
   height: 34px;
-  justify-content: space-between;
-  align-items: flex-end;
-}
-
-.card-otp {
+  line-height: 34px;
   font-size: 28px;
   font-weight: bold;
   color: #00E5FF;
-}
-
-.card-time {
-  font-size: 13px;
-  color: #8E8E93;
-  margin-bottom: 2px;
 }
 
 .footer-item {
@@ -465,6 +503,35 @@ export default {
   color: #48484A;
 }
 
+.bottom-progress-container {
+  position: absolute;
+  left: 0;
+  bottom: 4px;
+  width: 100%;
+  height: 8px;
+  justify-content: center;
+  align-items: center;
+}
+
+.bottom-progress {
+  width: 140px;
+  height: 4px;
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+}
+
+.progress-cyan {
+  color: #00E5FF;
+}
+
+.progress-orange {
+  color: #FF9F0A;
+}
+
+.progress-red {
+  color: #FF453A;
+}
+
 .empty-view {
   width: 100%;
   height: 100%;
@@ -474,11 +541,10 @@ export default {
 }
 
 .empty-header {
-  width: 100%;
   height: 48px;
   justify-content: flex-end;
   align-items: center;
-  padding-right: 12px;
+  padding-right: 14px;
 }
 
 .empty-body {
@@ -505,12 +571,11 @@ export default {
 }
 
 .overlay-top-bar {
-  width: 100%;
   height: 48px;
   justify-content: space-between;
   align-items: center;
-  padding-left: 12px;
-  padding-right: 12px;
+  padding-left: 14px;
+  padding-right: 14px;
 }
 
 .bar-title {
@@ -519,20 +584,43 @@ export default {
   color: #FFFFFF;
 }
 
-.action-btn {
-  width: 44px;
-  height: 30px;
+.btn-back {
+  width: 38px;
+  height: 26px;
+  background-color: #2C2C2E;
+  border-radius: 13px;
+  justify-content: center;
+  align-items: center;
+}
+
+.btn-del {
+  width: 38px;
+  height: 26px;
+  background-color: #FF3B30;
+  border-radius: 13px;
+  justify-content: center;
+  align-items: center;
+}
+
+.btn-icon-back {
+  width: 10px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.btn-icon-del {
+  width: 14px;
+  height: 16px;
   object-fit: contain;
 }
 
 .detail-body {
-  width: 100%;
   flex: 1;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding-left: 16px;
-  padding-right: 16px;
+  padding-left: 14px;
+  padding-right: 14px;
 }
 
 .detail-name {
@@ -575,8 +663,8 @@ export default {
 .about-list {
   width: 100%;
   height: 100%;
-  padding-left: 12px;
-  padding-right: 12px;
+  padding-left: 10px;
+  padding-right: 10px;
 }
 
 .about-item-logo {
