@@ -196,6 +196,11 @@ export default {
         this.initConn();
     },
     initConn() {
+        if (!conn) {
+            try {
+                conn = interconnect.instance();
+            } catch (e) {}
+        }
         if (conn) {
             conn.onmessage = (data) => {
                 try {
@@ -209,7 +214,7 @@ export default {
                             this.list[index].name = e.name || this.list[index].name;
                             this.list[index].usr = e.usr || '';
                             this.list[index].isSteam = (this.list[index].name && this.list[index].name.toLowerCase() === "steam");
-                            // 密钥未变更，无需重新计算 prec
+                            this.list[index].prec = precomputeKey(this.list[index].key);
                         } else {
                             this.list.push(new KeyItem(e.key, e.name, e.usr, curDiv));
                         }
@@ -218,7 +223,7 @@ export default {
                     this.save();
                     this.updateAllOtp(curDiv);
                     prompt.showToast({
-                        message: "同步成功",
+                        message: "同步成功 (" + d.length + " 个账号)",
                         duration: 1500
                     });
                 } catch (error) {
@@ -340,7 +345,7 @@ export default {
         });
     },
     onShow() {
-        // 亮屏唤醒：若当前实例无数据但已有全局缓存才赋值，避免重复覆盖绑定引发内存泄漏
+        // 唤醒：将当前实例数据全量同步至全局变量，避免多次切前后台内存泄漏
         if ((!this.list || this.list.length === 0) && memoryCacheList && memoryCacheList.length > 0) {
             this.list = memoryCacheList;
             this.isLoaded = true;

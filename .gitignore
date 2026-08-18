@@ -4,3 +4,10 @@ dist
 .temp_*
 .vscode/
 
+# Certificates and keys (Security)
+sign/
+*.pem
+*.key
+*.crt
+*.jks
+*.keystore
