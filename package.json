@@ -1,6 +1,6 @@
 {
   "name": "com.lst.bandtotp",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "BandTOTP for Xiaomi Vela watch",
   "scripts": {
     "build": "aiot build",
