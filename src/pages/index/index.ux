@@ -81,7 +81,7 @@
         </list-item>
         <list-item type="ab-title" class="about-item-title">
           <text class="about-app-name">BandTOTP</text>
-          <text class="about-version">Version 2.0</text>
+          <text class="about-version">Version 2.1</text>
         </list-item>
         <list-item type="ab-tag" class="about-item-tag">
           <text class="about-tag-text">离线安全双重认证</text>
